@@ -292,6 +292,9 @@ fork(void)
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
 
+  // child should track syscalls tracked by parent.
+  np->traced_call = p->traced_call;
+
   // Cause fork to return 0 in the child.
   np->trapframe->a0 = 0;
 
