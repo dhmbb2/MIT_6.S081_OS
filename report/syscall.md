@@ -6,7 +6,7 @@ In lab syscall, we add two syscalls, systrace and sysinfo, to xv6.
 A trace call takes in an integral mask, whose bits specify which system call to trace. Every time a traced syscall is called. OS will print out the pid of process from which it is called, the name of the syscall and the return value of the call.
 
 To begin with, notice that entrance to syscall is automatically generated in `user/usys.pl`, the following code should be added to `user/usys.pl`:
-```
+```c
 // in user/usys.pl
 
 sub entry {
@@ -23,7 +23,7 @@ entry("trace");
 Add an integer `int traced_call` to `struct proc` documenting all traced syscall.
 
 `sys_trace()` read the argument from `%a0` and store it in current process's `traced_call`.
-```
+```c
 // in kernel/sysproc.c
 
 uint64
@@ -37,7 +37,7 @@ sys_trace(void)
 ```
 
 In function `syscall()`, add corresponding logic to print stuff:
-```
+```c
 // in kernel/syscall.c
 
 if (((p->traced_call >> num) & 1) == 1) {
@@ -47,7 +47,7 @@ if (((p->traced_call >> num) & 1) == 1) {
 ```
 
 Add some logic in `fork()` to make sure that child process inherit parents' traced calls
-```
+```c
 // in kernal/proc.c fork()
 
 
@@ -63,7 +63,7 @@ np->traced_call = p->traced_call;
 `sysinfo` collects information about the running system. The system call takes one argument: a pointer to a struct `sysinfo` (see `kernel/sysinfo.h`). The kernel should fill out the fields of this struct: the `freemem` field should be set to the number of bytes of free memory, and the `nproc` field should be set to the number of processes whose state is not `UNUSED`.
 
 First we need two helper functions. We iterate over free lists which stores free memory and calculate the num of free memory size in terms of bytes.
-```
+```c
 uint free_list_size(void) 
 {
   uint size = 0;
@@ -77,7 +77,7 @@ uint free_list_size(void)
 ```
 
 Now we traverse over array which stores all proc `proc[NPROC]` and count proccesses which is not `UNUSED`
-```
+```c
 uint 
 num_used_proc(void) 
 {
@@ -94,7 +94,7 @@ num_used_proc(void)
 ```
 
 `sys_syscall()` first define a kernal space sysinfo struct and collect needed information. Then it uses `copyout()` to copy the kernal space struct into user space (Store data in the struct passed in as argument).
-```
+```c
 uint64
 sys_sysinfo(void)
 {
