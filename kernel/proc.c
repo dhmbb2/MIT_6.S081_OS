@@ -674,3 +674,34 @@ procdump(void)
     printf("\n");
   }
 }
+
+int 
+pgaccess(uint64 page_to_check_t, int num, uint64 abits) {
+  struct proc *p = myproc();
+
+  if (num > 32) { 
+    panic("too much page to check!");
+    return -1;
+  }
+
+  unsigned int buffer;
+  pte_t *pte;
+  for (int i = 0; i < num; ++i) {
+    uint64 vm = (uint64)((char*)page_to_check_t + i * PGSIZE);
+    if ((pte = walk(p->pagetable, vm ,0)) < 0) {
+      panic("unallocated pages");
+      return -1;
+    }
+    if (PTE_A & (*pte)) {
+      // reset the access bit;
+      *pte = *pte & ~(1L << 6);
+      // set the detection buffer
+      buffer = buffer | (1 << i);
+    }
+  }
+
+  if (copyout(p->pagetable, abits, (char*)&buffer, sizeof(buffer)) < 0)
+    return -1;
+
+  return 0;
+}
