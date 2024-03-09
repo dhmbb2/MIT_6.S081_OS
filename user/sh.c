@@ -175,7 +175,6 @@ void
 panic(char *s)
 {
   fprintf(2, "%s\n", s);
-  backtrace();
   exit(1);
 }
 
