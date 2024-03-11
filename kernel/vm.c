@@ -15,6 +15,10 @@ extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
 
+extern int rc[];
+extern struct spinlock rclock;
+
+
 // Make a direct-map page table for the kernel.
 pagetable_t
 kvmmake(void)
@@ -293,17 +297,14 @@ uvmfree(pagetable_t pagetable, uint64 sz)
 
 // Given a parent process's page table, copy
 // its memory into a child's page table.
-// Copies both the page table and the
-// physical memory.
-// returns 0 on success, -1 on failure.
-// frees any allocated pages on failure.
+// lazy copy, copy only page table, and set PTR_W 
+// to be 0 for page fault to be triggered
 int
 uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 {
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -311,14 +312,14 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
+    *pte &= ~PTE_W; // set PTE_W to be 0
+    *pte |= PTE_C;  // set the page to be cowed
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
+    acquire(&rclock);
+    ++rc[PA2INDEX((uint64)pa)];
+    release(&rclock);
+    if(mappages(new, i, PGSIZE, (uint64)pa, flags) != 0)
       goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
-      goto err;
-    }
   }
   return 0;
 
@@ -347,9 +348,15 @@ int
 copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
   uint64 n, va0, pa0;
+  pte_t* pte;
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
+    if ( va0 >= MAXVA || (pte = walk(pagetable, va0, 0)) == 0 ||
+         (*pte & PTE_V) == 0 || (*pte & PTE_U) == 0)
+      return -1;
+    if (*(pte) & PTE_C)
+      cow_handler(pagetable, va0, pte);
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;
@@ -431,4 +438,48 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+// 0 if normally handled, -1 if no more memory to be
+// allocated
+int
+pagefault_handler(pagetable_t pagetable) 
+{
+  pte_t* pte;
+  uint64 va = PGROUNDDOWN(r_stval());
+
+  if ( va >= MAXVA || (pte = walk(pagetable, va, 0)) == 0 ||
+       (*pte & PTE_V) == 0)
+    return -1;
+
+  if (!(*pte & PTE_C))
+    return -1;
+
+  // If pagefault at cowed page, copy, move and
+  // set PTE_W bit
+  return cow_handler(pagetable, va, pte);
+}
+
+int 
+cow_handler(pagetable_t pagetable, uint64 va, pte_t* pte) 
+{
+  
+  uint flag;
+  uint64 pa;
+  char* mem;
+
+  pa = PTE2PA(*pte);
+  *pte |= PTE_W;  // set PTE_W to be true
+  flag = PTE_FLAGS(*pte);
+
+  // if no memory available, return -1
+  if ((mem = kalloc()) == 0) 
+    return -1;
+  memmove(mem, (void*)pa, PGSIZE);
+  uvmunmap(pagetable, va, 1, 1);
+  if (mappages(pagetable, va, 1, (uint64)mem, flag) < 0) {
+    kfree((void*)mem);
+    return -1;
+  }
+  return 0;
 }
