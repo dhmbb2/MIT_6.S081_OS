@@ -96,8 +96,8 @@ thread_create(void (*func)())
   t->state = RUNNABLE;
   // initialize thread's ra, sp
   t->context.ra = (uint64)func;
-  t->context.sp = t->stack[STACK_SIZE-1];
-  t->context.s0 = t->stack[STACK_SIZE-1]; // frame pointer
+  t->context.sp = (uint64)&t->stack[STACK_SIZE-1];
+  t->context.s0 = (uint64)&t->stack[STACK_SIZE-1]; // frame pointer
 }
 
 void 
